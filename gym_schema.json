@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gym Profile Schema",
+  "description": "Schema for gym profile configuration",
+  "type": "object",
+  "properties": {
+    "gym_name": {
+      "type": "string",
+      "description": "Name of the gym",
+      "minLength": 1
+    },
+    "address": {
+      "type": "object",
+      "description": "Gym address in Indonesian format",
+      "properties": {
+        "street_name": {
+          "type": "string",
+          "description": "Street name and number"
+        },
+        "district_subdistrict": {
+          "type": "string",
+          "description": "District or subdistrict (Kecamatan/Kelurahan)"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name (Kota/Kabupaten)"
+        },
+        "province": {
+          "type": "string",
+          "description": "Province name (Provinsi)"
+        }
+      },
+      "required": ["street_name", "district_subdistrict", "city", "province"],
+      "additionalProperties": false
+    },
+    "phone_numbers": {
+      "type": "array",
+      "description": "List of phone numbers",
+      "items": {
+        "type": "string",
+        "pattern": "^\\+?[0-9\\s\\-()]+$"
+      },
+      "minItems": 1
+    },
+    "email": {
+      "type": "string",
+      "description": "Contact email address",
+      "format": "email"
+    },
+    "social_media": {
+      "type": "object",
+      "description": "Social media handles",
+      "properties": {
+        "instagram": {
+          "type": "string",
+          "description": "Instagram handle"
+        },
+        "x": {
+          "type": "string",
+          "description": "X (Twitter) handle"
+        },
+        "facebook": {
+          "type": "string",
+          "description": "Facebook page name"
+        }
+      },
+      "required": ["instagram", "x", "facebook"],
+      "additionalProperties": false
+    },
+    "opening_days": {
+      "type": "array",
+      "description": "Days the gym is open",
+      "items": {
+        "type": "string",
+        "enum": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+      },
+      "minItems": 1,
+      "maxItems": 7,
+      "uniqueItems": true
+    },
+    "opening_hours": {
+      "type": "object",
+      "description": "Operating hours (24-hour format)",
+      "properties": {
+        "start": {
+          "type": "string",
+          "description": "Opening time",
+          "pattern": "^([0-1][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "end": {
+          "type": "string",
+          "description": "Closing time",
+          "pattern": "^([0-1][0-9]|2[0-3]):[0-5][0-9]$"
+        }
+      },
+      "required": ["start", "end"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["gym_name", "address", "phone_numbers", "email", "social_media", "opening_days", "opening_hours"],
+  "additionalProperties": false
+}
