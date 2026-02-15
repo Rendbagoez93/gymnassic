@@ -39,8 +39,8 @@ DJANGO_APPS = [
 ]
 
 MAIN_APPS = [
-    "applications.user",
-    "applications.membership",
+    # "applications.user",
+    # "applications.membership",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + MAIN_APPS

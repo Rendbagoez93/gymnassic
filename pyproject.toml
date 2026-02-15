@@ -68,6 +68,12 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by black)
+    "E301",   # expected 1 blank line, found 0
+    "E302",   # expected 2 blank lines, found 1
+    "E303",   # too many blank lines
+    "E304",   # blank lines found after function decorator
+    "E305",   # expected 2 blank lines after class or function definition
+    "E306",   # expected 1 blank line before a nested definition
     "B008",   # do not perform function calls in argument defaults
     "DJ001",  # avoid using null=True on string-based fields
 ]
@@ -81,19 +87,23 @@ known-first-party = ["gymnassic"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "gymnassic.settings"
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+pythonpath = ["."]
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
-    "--cov=gymnassic",
+    "--cov=config",
+    "--cov=modules",
+    "--cov=shared",
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
     "--reuse-db",
 ]
 testpaths = ["tests"]
+django_find_project = false
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
