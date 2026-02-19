@@ -28,9 +28,9 @@ from faker import Faker
 
 
 # Configure Django settings for testing
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
-os.environ.setdefault("__COMMON_ENVIRONMENT", "development")
-os.environ.setdefault("__COMMON_DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
+os.environ.setdefault("DJANGO_ENV", "local")
+os.environ.setdefault("ENV", "local")
 
 # Initialize Django
 if not settings.configured:
@@ -67,8 +67,36 @@ def django_db_setup(django_db_blocker):
     # Run migrations at session level, outside of any transaction
     with django_db_blocker.unblock():
         from django.db import connection
+        from django.core.management import call_command as django_call_command
         connection.set_autocommit(True)
+        
+        # First run migrations for all existing apps
         call_command("migrate", "--run-syncdb", verbosity=0)
+        
+        # Create tables for test models
+        from django.db import connection
+        from tests import models as test_models
+        
+        with connection.schema_editor() as schema_editor:
+            try:
+                schema_editor.create_model(test_models.ConcreteBaseModel)
+            except Exception:
+                pass  # Table already exists
+            
+            try:
+                schema_editor.create_model(test_models.ConcreteTimeStampedModel)
+            except Exception:
+                pass  # Table already exists
+            
+            try:
+                schema_editor.create_model(test_models.ConcreteSoftDeleteModel)
+            except Exception:
+                pass  # Table already exists
+            
+            try:
+                schema_editor.create_model(test_models.ConcreteSoftDeleteableModel)
+            except Exception:
+                pass  # Table already exists
 
 
 @pytest.fixture(scope="function")
@@ -91,11 +119,11 @@ def temp_env_file():
     Create a temporary .env file for testing.
     """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
-        f.write("__COMMON_SECRET_KEY=test-secret-key-12345678\n")
-        f.write("__COMMON_DEBUG=true\n")
-        f.write("__COMMON_ALLOWED_HOSTS=localhost,testserver\n")
-        f.write("__COMMON_DATABASE_URL=sqlite:///test_db.sqlite3\n")
-        f.write("__COMMON_LOG_LEVEL=DEBUG\n")
+        f.write("secret_key=test-secret-key-12345678\n")
+        f.write("debug=true\n")
+        f.write("allowed_hosts=localhost,testserver\n")
+        f.write("database_engine=django.db.backends.sqlite3\n")
+        f.write("database_name=test_db.sqlite3\n")
         temp_path = f.name
 
     yield temp_path
@@ -106,21 +134,26 @@ def temp_env_file():
 
 
 @pytest.fixture
-def development_env_data():
+def local_env_data():
     """
-    Sample development environment configuration data.
+    Sample local environment configuration data.
     """
     return {
-        "secret_key": "dev-secret-key-for-testing",
+        "secret_key": "local-secret-key-for-testing",
         "debug": True,
-        "allowed_hosts": "localhost,127.0.0.1",
-        "environment": "development",
-        "database_url": "sqlite:///dev_db.sqlite3",
-        "database_name": None,
-        "log_level": "DEBUG",
-        "timezone": "UTC",
+        "allowed_hosts": "localhost,127.0.0.1,0.0.0.0",
+        "environment": "local",
+        "timezone": "Asia/Jakarta",
         "language_code": "en-us",
     }
+
+
+@pytest.fixture
+def development_env_data(local_env_data):
+    """
+    Alias for local_env_data for backward compatibility.
+    """
+    return local_env_data
 
 
 @pytest.fixture
@@ -133,11 +166,44 @@ def production_env_data():
         "debug": False,
         "allowed_hosts": "example.com,www.example.com",
         "environment": "production",
-        "database_url": "postgresql://user:pass@localhost:5432/gymnassic",
-        "database_name": "gymnassic_prod",
-        "log_level": "WARNING",
         "timezone": "Asia/Jakarta",
         "language_code": "id-id",
+        "email_backend": "django.core.mail.backends.smtp.EmailBackend",
+        "email_host": "smtp.example.com",
+        "email_port": 587,
+        "email_use_tls": True,
+        "email_host_user": "user@example.com",
+        "email_host_password": "password123",
+    }
+
+
+@pytest.fixture
+def local_db_data():
+    """
+    Sample local database configuration data.
+    """
+    return {
+        "environment": "local",
+        "database_engine": "django.db.backends.sqlite3",
+        "database_name": "db.sqlite3",
+    }
+
+
+@pytest.fixture
+def production_db_data():
+    """
+    Sample production database configuration data.
+    """
+    return {
+        "environment": "production",
+        "database_engine": "django.db.backends.postgresql",
+        "database_name": "gymnassic_prod",
+        "database_user": "dbuser",
+        "database_password": "dbpass123",
+        "database_host": "localhost",
+        "database_port": "5432",
+        "database_conn_max_age": 600,
+        "database_conn_health_checks": True,
     }
 
 
@@ -400,7 +466,14 @@ def clean_environment():
     """
     original_env = os.environ.copy()
     # Clear test-related environment variables
-    test_vars = [k for k in os.environ.keys() if k.startswith("__COMMON_")]
+    test_vars = [
+        "DJANGO_ENV", "ENV",
+        "secret_key", "debug", "allowed_hosts", "environment",
+        "database_engine", "database_name", "database_user",
+        "database_password", "database_host", "database_port",
+        "timezone", "language_code", "static_url", "media_url",
+        "email_backend", "email_host", "email_port"
+    ]
     for var in test_vars:
         os.environ.pop(var, None)
     yield

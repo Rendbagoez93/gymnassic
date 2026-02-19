@@ -2,21 +2,37 @@
 Test suite for environment settings and configuration.
 
 Tests cover:
-- CommonSettings validation and loading
-- DevelopmentSettings configuration
+- __COMMON base settings validation and loading
+- LocalSettings configuration
 - ProductionSettings configuration
-- EnvironmentFactory behavior
-- Database URL parsing
 - Settings factory functions
+- Database settings configuration
+- Settings singleton behavior
 """
 
 import os
 import pytest
 from pydantic import ValidationError
 
-from config.settings.envcommon import CommonSettings, DevelopmentSettings, ProductionSettings
-from config.settings.factory import EnvironmentFactory, get_settings, load_environment
-from config.settings.databases import parse_database_url, get_database_config
+from config.settings.envcommon import (
+    __COMMON as CommonSettings,
+    LocalSettings,
+    ProductionSettings,
+    get_settings_instance,
+)
+from config.settings.databases import (
+    DatabaseSettings,
+    LocalDatabaseSettings,
+    ProductionDatabaseSettings,
+    get_database_settings_instance,
+)
+from config.settings.factory import (
+    get_settings,
+    get_database_settings,
+    get_gym_settings,
+    override_settings,
+    reset_settings,
+)
 
 
 # ============================================================================
@@ -24,32 +40,27 @@ from config.settings.databases import parse_database_url, get_database_config
 # ============================================================================
 
 class TestCommonSettings:
-    """Test CommonSettings base configuration."""
+    """Test __COMMON base configuration."""
 
     def test_default_common_settings(self, clean_environment):
-        """Test CommonSettings with default values."""
+        """Test __COMMON with default values."""
         settings = CommonSettings()
 
-        assert settings.secret_key == "django-insecure-default-key-change-this"
-        assert settings.debug is False
-        assert settings.allowed_hosts == "localhost,127.0.0.1"
-        assert settings.environment == "development"
-        assert settings.database_url == "sqlite:///db.sqlite3"
-        assert settings.database_name is None
-        assert settings.log_level == "INFO"
-        assert settings.timezone == "UTC"
-        assert settings.language_code == "en-us"
-
-    def test_custom_common_settings(self, clean_environment, development_env_data):
-        """Test CommonSettings with custom values."""
-        settings = CommonSettings(**development_env_data)
-
-        assert settings.secret_key == "dev-secret-key-for-testing"
+        assert settings.secret_key == "django-insecure-change-me-in-production"
         assert settings.debug is True
         assert settings.allowed_hosts == "localhost,127.0.0.1"
-        assert settings.environment == "development"
-        assert settings.database_url == "sqlite:///dev_db.sqlite3"
-        assert settings.log_level == "DEBUG"
+        assert settings.environment == "local"
+        assert settings.timezone == "Asia/Jakarta"
+        assert settings.language_code == "en-us"
+
+    def test_custom_common_settings(self, clean_environment, local_env_data):
+        """Test __COMMON with custom values."""
+        settings = CommonSettings(**local_env_data)
+
+        assert settings.secret_key == "local-secret-key-for-testing"
+        assert settings.debug is True
+        assert settings.allowed_hosts == "localhost,127.0.0.1,0.0.0.0"
+        assert settings.environment == "local"
 
     def test_get_allowed_hosts_list(self, clean_environment):
         """Test conversion of allowed_hosts string to list."""
@@ -70,78 +81,63 @@ class TestCommonSettings:
         assert len(hosts) == 3
         assert all(host.strip() == host for host in hosts)  # No extra spaces
 
-    def test_validate_log_level_valid(self, clean_environment):
-        """Test log_level validation with valid values."""
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-        for level in valid_levels:
-            settings = CommonSettings(log_level=level)
-            assert settings.log_level == level
-
-    def test_validate_log_level_case_insensitive(self, clean_environment):
-        """Test log_level validation is case-insensitive."""
-        settings = CommonSettings(log_level="debug")
-        assert settings.log_level == "DEBUG"
-
-        settings = CommonSettings(log_level="InFo")
-        assert settings.log_level == "INFO"
-
-    def test_validate_log_level_invalid(self, clean_environment):
-        """Test log_level validation with invalid value."""
-        with pytest.raises(ValidationError) as exc_info:
-            CommonSettings(log_level="INVALID")
-        
-        assert "log_level must be one of" in str(exc_info.value)
-
     def test_validate_environment_valid(self, clean_environment):
         """Test environment validation with valid values."""
-        dev_settings = CommonSettings(environment="development")
-        assert dev_settings.environment == "development"
+        local_settings = CommonSettings(environment="local")
+        assert local_settings.environment == "local"
         
-        prod_settings = CommonSettings(environment="production")
+        prod_settings = CommonSettings(
+            environment="production",
+            secret_key="secure-production-key-for-testing-purposes"
+        )
         assert prod_settings.environment == "production"
-
-    def test_validate_environment_case_insensitive(self, clean_environment):
-        """Test environment validation is case-insensitive."""
-        settings = CommonSettings(environment="DEVELOPMENT")
-        assert settings.environment == "development"
-        
-        settings = CommonSettings(environment="Production")
-        assert settings.environment == "production"
 
     def test_validate_environment_invalid(self, clean_environment):
         """Test environment validation with invalid value."""
         with pytest.raises(ValidationError) as exc_info:
             CommonSettings(environment="staging")
         
-        assert "environment must be one of" in str(exc_info.value)
+        assert "Invalid environment" in str(exc_info.value)
+
+    def test_is_local_method(self, clean_environment):
+        """Test is_local() method."""
+        local_settings = CommonSettings(environment="local")
+        assert local_settings.is_local() is True
+        assert local_settings.is_production() is False
+
+    def test_is_production_method(self, clean_environment):
+        """Test is_production() method."""
+        prod_settings = CommonSettings(
+            environment="production",
+            secret_key="secure-production-key-for-testing-purposes"
+        )
+        assert prod_settings.is_production() is True
+        assert prod_settings.is_local() is False
 
 
 # ============================================================================
-# DEVELOPMENT SETTINGS TESTS
+# LOCAL SETTINGS TESTS
 # ============================================================================
 
-class TestDevelopmentSettings:
-    """Test DevelopmentSettings configuration."""
+class TestLocalSettings:
+    """Test LocalSettings configuration."""
 
-    def test_development_defaults(self, clean_environment):
-        """Test DevelopmentSettings with default values."""
-        settings = DevelopmentSettings()
+    def test_local_defaults(self, clean_environment):
+        """Test LocalSettings with default values."""
+        settings = LocalSettings()
         
         assert settings.debug is True
-        assert settings.environment == "development"
-        assert settings.log_level == "DEBUG"
+        assert settings.environment == "local"
+        assert settings.allowed_hosts == "localhost,127.0.0.1,0.0.0.0"
 
-    def test_development_custom_values(self, clean_environment):
-        """Test DevelopmentSettings with custom values."""
-        settings = DevelopmentSettings(
-            secret_key="custom-dev-key",
-            database_url="sqlite:///custom_dev.db",
+    def test_local_custom_values(self, clean_environment):
+        """Test LocalSettings with custom values."""
+        settings = LocalSettings(
+            secret_key="custom-local-key",
             timezone="Asia/Jakarta"
         )
         
-        assert settings.secret_key == "custom-dev-key"
-        assert settings.database_url == "sqlite:///custom_dev.db"
+        assert settings.secret_key == "custom-local-key"
         assert settings.timezone == "Asia/Jakarta"
         assert settings.debug is True  # Still true by default
 
@@ -154,220 +150,126 @@ class TestProductionSettings:
     """Test ProductionSettings configuration."""
 
     def test_production_defaults(self, clean_environment):
-        """Test ProductionSettings with default values (should require explicit config)."""
-        settings = ProductionSettings()
-        
-        # Production should NOT have debug enabled by default
-        assert settings.debug is False
-        assert settings.environment == "production"
+        """Test ProductionSettings requires explicit secret_key."""
+        # Production requires secret_key to be set
+        with pytest.raises(ValidationError):
+            ProductionSettings()
 
     def test_production_custom_values(self, clean_environment, production_env_data):
         """Test ProductionSettings with production-like values."""
         settings = ProductionSettings(**production_env_data)
         
-        assert settings.secret_key != "django-insecure-default-key-change-in-production"
+        assert settings.secret_key != "django-insecure-change-me-in-production"
         assert settings.debug is False
         assert settings.environment == "production"
-        assert settings.log_level == "WARNING"
-        assert "postgresql://" in settings.database_url
 
     def test_production_requires_secure_secret_key(self, clean_environment):
-        """Test that production should use a secure secret key."""
+        """Test that production enforces secure secret key."""
+        with pytest.raises(ValidationError) as exc_info:
+            ProductionSettings(
+                secret_key="django-insecure-change-me-in-production"
+            )
+        
+        assert "You must set a secure SECRET_KEY" in str(exc_info.value)
+
+    def test_production_valid_secret_key(self, clean_environment):
+        """Test production with a valid secure secret key."""
         settings = ProductionSettings(
-            secret_key="very-secure-random-key-for-production-use"
+            secret_key="very-secure-random-key-for-production-use-12345"
         )
         
-        # Ensure it's not the default insecure key
-        assert "insecure" not in settings.secret_key.lower()
-
-
-# ============================================================================
-# ENVIRONMENT FACTORY TESTS
-# ============================================================================
-
-class TestEnvironmentFactory:
-    """Test EnvironmentFactory for managing environment configurations."""
-
-    def teardown_method(self):
-        """Clean up after each test."""
-        EnvironmentFactory.detach()
-
-    def test_attach_development_by_default(self, clean_environment):
-        """Test factory attaches development environment by default."""
-        settings = EnvironmentFactory.attach()
-        
-        assert isinstance(settings, DevelopmentSettings)
-        assert settings.debug is True
-        assert EnvironmentFactory.is_attached()
-        assert EnvironmentFactory.current_type() == "development"
-
-    def test_attach_production_explicitly(self, clean_environment):
-        """Test factory attaches production environment when specified."""
-        settings = EnvironmentFactory.attach("production")
-        
-        assert isinstance(settings, ProductionSettings)
+        assert settings.secret_key == "very-secure-random-key-for-production-use-12345"
         assert settings.debug is False
-        assert EnvironmentFactory.current_type() == "production"
-
-    def test_attach_from_environment_variable(self, clean_environment):
-        """Test factory reads environment type from env variable."""
-        os.environ["__COMMON_ENVIRONMENT"] = "production"
-        settings = EnvironmentFactory.attach()
-        
-        assert isinstance(settings, ProductionSettings)
-        assert EnvironmentFactory.current_type() == "production"
-
-    def test_attach_invalid_environment(self, clean_environment):
-        """Test factory raises error for invalid environment type."""
-        with pytest.raises(ValueError) as exc_info:
-            EnvironmentFactory.attach("staging")
-        
-        assert "Invalid environment type" in str(exc_info.value)
-
-    def test_current_without_attach_raises_error(self, clean_environment):
-        """Test accessing current settings without attach raises error."""
-        with pytest.raises(RuntimeError) as exc_info:
-            EnvironmentFactory.current()
-        
-        assert "No environment attached" in str(exc_info.value)
-
-    def test_current_after_attach_returns_settings(self, clean_environment):
-        """Test current() returns settings after attach."""
-        EnvironmentFactory.attach("development")
-        settings = EnvironmentFactory.current()
-        
-        assert isinstance(settings, DevelopmentSettings)
-
-    def test_get_or_attach_when_not_attached(self, clean_environment):
-        """Test get_or_attach attaches when not already attached."""
-        assert not EnvironmentFactory.is_attached()
-        
-        settings = EnvironmentFactory.get_or_attach()
-        
-        assert EnvironmentFactory.is_attached()
-        assert isinstance(settings, CommonSettings)
-
-    def test_get_or_attach_when_already_attached(self, clean_environment):
-        """Test get_or_attach returns existing when already attached."""
-        first = EnvironmentFactory.attach("development")
-        second = EnvironmentFactory.get_or_attach("production")
-        
-        # Should return the first attached, not create a new one
-        assert first is second
-
-    def test_detach_clears_environment(self, clean_environment):
-        """Test detach clears the current environment."""
-        EnvironmentFactory.attach("development")
-        assert EnvironmentFactory.is_attached()
-        
-        EnvironmentFactory.detach()
-        
-        assert not EnvironmentFactory.is_attached()
-        assert EnvironmentFactory.current_type() is None
-
-    def test_reload_with_same_environment(self, clean_environment):
-        """Test reload recreates settings with same environment type."""
-        EnvironmentFactory.attach("development")
-        original_type = EnvironmentFactory.current_type()
-        
-        reloaded = EnvironmentFactory.reload()
-        
-        assert EnvironmentFactory.current_type() == original_type
-        assert isinstance(reloaded, DevelopmentSettings)
-
-    def test_reload_without_attach_raises_error(self, clean_environment):
-        """Test reload without attach raises error."""
-        with pytest.raises(RuntimeError) as exc_info:
-            EnvironmentFactory.reload()
-        
-        assert "No environment to reload" in str(exc_info.value)
+        assert settings.environment == "production"
 
 
 # ============================================================================
-# DATABASE URL PARSING TESTS
+# DATABASE SETTINGS TESTS
 # ============================================================================
 
-class TestDatabaseURLParsing:
-    """Test database URL parsing functionality."""
+class TestDatabaseSettings:
+    """Test DatabaseSettings configuration."""
 
-    def test_parse_sqlite_relative_path(self):
-        """Test parsing SQLite with relative path."""
-        config = parse_database_url("sqlite:///db.sqlite3")
-        
+    def test_default_database_settings(self, clean_environment):
+        """Test DatabaseSettings with default values."""
+        settings = DatabaseSettings()
+
+        assert settings.environment == "local"
+        assert settings.database_engine == "django.db.backends.sqlite3"
+        assert "db.sqlite3" in settings.database_name
+
+    def test_database_config_sqlite(self, clean_environment, local_db_data):
+        """Test database configuration for SQLite."""
+        settings = DatabaseSettings(**local_db_data)
+        config = settings.get_database_config()
+
         assert config["ENGINE"] == "django.db.backends.sqlite3"
         assert config["NAME"] == "db.sqlite3"
+        assert "USER" not in config  # SQLite doesn't need user
 
-    def test_parse_sqlite_absolute_path(self):
-        """Test parsing SQLite with absolute path."""
-        config = parse_database_url("sqlite:////absolute/path/to/db.sqlite3")
-        
-        assert config["ENGINE"] == "django.db.backends.sqlite3"
-        assert config["NAME"] == "/absolute/path/to/db.sqlite3"
+    def test_database_config_postgresql(self, clean_environment, production_db_data):
+        """Test database configuration for PostgreSQL."""
+        settings = DatabaseSettings(**production_db_data)
+        config = settings.get_database_config()
 
-    def test_parse_sqlite_memory(self):
-        """Test parsing SQLite in-memory database."""
-        config = parse_database_url("sqlite:///:memory:")
-        
-        assert config["ENGINE"] == "django.db.backends.sqlite3"
-        assert config["NAME"] == ":memory:"
-
-    def test_parse_postgresql_full(self):
-        """Test parsing PostgreSQL URL with full credentials."""
-        config = parse_database_url("postgresql://myuser:mypass@localhost:5432/mydb")
-        
         assert config["ENGINE"] == "django.db.backends.postgresql"
-        assert config["NAME"] == "mydb"
-        assert config["USER"] == "myuser"
-        assert config["PASSWORD"] == "mypass"
+        assert config["NAME"] == "gymnassic_prod"
+        assert config["USER"] == "dbuser"
+        assert config["PASSWORD"] == "dbpass123"
         assert config["HOST"] == "localhost"
-        assert config["PORT"] == 5432
+        assert config["PORT"] == "5432"
+        assert config["CONN_MAX_AGE"] == 600
+        assert config["CONN_HEALTH_CHECKS"] is True
 
-    def test_parse_postgresql_minimal(self):
-        """Test parsing PostgreSQL URL with minimal info."""
-        config = parse_database_url("postgresql://localhost/testdb")
-        
-        assert config["ENGINE"] == "django.db.backends.postgresql"
-        assert config["NAME"] == "testdb"
-        assert config["HOST"] == "localhost"
-        assert config["USER"] == ""
-        assert config["PASSWORD"] == ""
+    def test_is_sqlite_method(self, clean_environment):
+        """Test is_sqlite() method."""
+        sqlite_settings = DatabaseSettings(database_engine="django.db.backends.sqlite3")
+        assert sqlite_settings.is_sqlite() is True
 
-    def test_parse_postgres_alias(self):
-        """Test parsing with 'postgres' scheme (alias for postgresql)."""
-        config = parse_database_url("postgres://user:pass@host:5432/db")
-        
-        assert config["ENGINE"] == "django.db.backends.postgresql"
-        assert config["NAME"] == "db"
+    def test_is_postgresql_method(self, clean_environment):
+        """Test is_postgresql() method."""
+        pg_settings = DatabaseSettings(database_engine="django.db.backends.postgresql")
+        assert pg_settings.is_postgresql() is True
 
-    def test_parse_unknown_scheme_defaults_to_sqlite(self):
-        """Test unknown scheme defaults to SQLite."""
-        config = parse_database_url("unknown:///path/to/db")
-        
-        assert config["ENGINE"] == "django.db.backends.sqlite3"
+    def test_is_mysql_method(self, clean_environment):
+        """Test is_mysql() method."""
+        mysql_settings = DatabaseSettings(database_engine="django.db.backends.mysql")
+        assert mysql_settings.is_mysql() is True
 
 
-class TestGetDatabaseConfig:
-    """Test get_database_config function."""
+class TestLocalDatabaseSettings:
+    """Test LocalDatabaseSettings configuration."""
 
-    def test_get_database_config_default(self, clean_environment):
-        """Test getting database config with default settings."""
-        os.environ["__COMMON_DATABASE_URL"] = "sqlite:///test.db"
-        
-        EnvironmentFactory.detach()  # Ensure clean state
-        config = get_database_config()
-        
-        assert "default" in config
-        assert config["default"]["ENGINE"] == "django.db.backends.sqlite3"
+    def test_local_database_defaults(self, clean_environment):
+        """Test LocalDatabaseSettings with default values."""
+        settings = LocalDatabaseSettings()
 
-    def test_get_database_config_with_override_name(self, clean_environment):
-        """Test database config with explicit database name override."""
-        os.environ["__COMMON_DATABASE_URL"] = "sqlite:///default.db"
-        os.environ["__COMMON_DATABASE_NAME"] = "custom_name.db"
-        
-        EnvironmentFactory.detach()
-        config = get_database_config()
-        
-        assert config["default"]["NAME"] == "custom_name.db"
+        assert settings.environment == "local"
+        assert settings.database_engine == "django.db.backends.sqlite3"
+        assert "db.sqlite3" in settings.database_name
+
+
+class TestProductionDatabaseSettings:
+    """Test ProductionDatabaseSettings configuration."""
+
+    def test_production_database_requires_config(self, clean_environment):
+        """Test ProductionDatabaseSettings requires explicit configuration."""
+        # Production requires database_name, database_user, database_password
+        with pytest.raises(ValidationError):
+            ProductionDatabaseSettings()
+
+    def test_production_database_valid_config(self, clean_environment):
+        """Test ProductionDatabaseSettings with valid configuration."""
+        settings = ProductionDatabaseSettings(
+            database_name="gymnassic_prod",
+            database_user="dbuser",
+            database_password="securepass123"
+        )
+
+        assert settings.environment == "production"
+        assert settings.database_engine == "django.db.backends.postgresql"
+        assert settings.database_conn_max_age == 600
+        assert settings.database_conn_health_checks is True
 
 
 # ============================================================================
@@ -375,30 +277,80 @@ class TestGetDatabaseConfig:
 # ============================================================================
 
 class TestFactoryFunctions:
-    """Test module-level factory functions."""
-
-    def teardown_method(self):
-        """Clean up after each test."""
-        EnvironmentFactory.detach()
+    """Test settings factory functions."""
 
     def test_get_settings_function(self, clean_environment):
         """Test get_settings convenience function."""
         settings = get_settings()
         
         assert isinstance(settings, CommonSettings)
-        assert EnvironmentFactory.is_attached()
 
-    def test_load_environment_development(self, clean_environment):
-        """Test load_environment function for development."""
-        settings = load_environment("development")
+    def test_get_database_settings_function(self, clean_environment):
+        """Test get_database_settings function."""
+        db_settings = get_database_settings()
         
-        assert isinstance(settings, DevelopmentSettings)
+        assert isinstance(db_settings, DatabaseSettings)
 
-    def test_load_environment_production(self, clean_environment):
-        """Test load_environment function for production."""
-        settings = load_environment("production")
+    def test_get_gym_settings_function(self, clean_environment):
+        """Test get_gym_settings function (may return None if not configured)."""
+        gym_config = get_gym_settings()
         
-        assert isinstance(settings, ProductionSettings)
+        # Should return None if gym_profile.yaml doesn't exist or has errors
+        # Otherwise returns GymProfile instance
+        assert gym_config is None or hasattr(gym_config, 'gym_name')
+
+    def test_override_settings_function(self, clean_environment):
+        """Test override_settings function for testing."""
+        # Create custom settings
+        custom_settings = LocalSettings(secret_key="test-override-key")
+        
+        # Override
+        override_settings(custom_settings)
+        
+        # Get settings should return overridden
+        current = get_settings()
+        assert current.secret_key == "test-override-key"
+        
+        # Reset
+        reset_settings()
+
+    def test_reset_settings_function(self, clean_environment):
+        """Test reset_settings function."""
+        # Override first
+        custom_settings = LocalSettings(secret_key="test-key")
+        override_settings(custom_settings)
+        
+        # Reset
+        reset_settings()
+        
+        # Settings should be back to default
+        current = get_settings()
+        # After reset, should create new instance with defaults
+        assert isinstance(current, CommonSettings)
+
+
+# ============================================================================
+# SINGLETON BEHAVIOR TESTS
+# ============================================================================
+
+class TestSingletonBehavior:
+    """Test singleton behavior of settings instances."""
+
+    def test_get_settings_instance_returns_same_object(self, clean_environment):
+        """Test get_settings_instance returns the same object."""
+        first = get_settings()
+        second = get_settings()
+        
+        # Should be the same object (singleton)
+        assert first is second
+
+    def test_get_database_settings_instance_returns_same_object(self, clean_environment):
+        """Test get_database_settings_instance returns same object."""
+        first = get_database_settings()
+        second = get_database_settings()
+        
+        # Should be the same object (singleton)
+        assert first is second
 
 
 # ============================================================================
@@ -409,33 +361,12 @@ class TestFactoryFunctions:
 class TestSettingsIntegration:
     """Integration tests for settings system."""
 
-    def test_full_settings_lifecycle(self, clean_environment):
-        """Test complete lifecycle: load, use, reload, detach."""
-        # Load development
-        dev_settings = load_environment("development")
-        assert dev_settings.debug is True
-        
-        # Use settings
-        current = get_settings()
-        assert current.debug is True
-        
-        # Detach
-        EnvironmentFactory.detach()
-        assert not EnvironmentFactory.is_attached()
-        
-        # Re-attach with production
-        prod_settings = EnvironmentFactory.attach("production")
-        assert prod_settings.debug is False
-
     def test_settings_with_real_world_production_config(self, clean_environment):
         """Test production configuration with realistic values."""
         prod_settings = ProductionSettings(
             secret_key="p$7k#2n@x9q!5m&8z^4l+6w*3h%1v",
             debug=False,
             allowed_hosts="gymnassic.co.id,www.gymnassic.co.id,api.gymnassic.co.id",
-            database_url="postgresql://gym_user:secure_password@db.gymnassic.local:5432/gymnassic_prod",
-            database_name="gymnassic_prod",
-            log_level="ERROR",
             timezone="Asia/Jakarta",
             language_code="id-id",
         )
@@ -445,3 +376,15 @@ class TestSettingsIntegration:
         assert "gymnassic.co.id" in hosts
         assert prod_settings.timezone == "Asia/Jakarta"
         assert prod_settings.language_code == "id-id"
+
+    def test_combined_env_and_db_settings(self, clean_environment):
+        """Test that env and database settings work together."""
+        env_settings = get_settings()
+        db_settings = get_database_settings()
+        
+        # Both should be valid instances
+        assert isinstance(env_settings, CommonSettings)
+        assert isinstance(db_settings, DatabaseSettings)
+        
+        # Environment should match
+        assert env_settings.environment == db_settings.environment
