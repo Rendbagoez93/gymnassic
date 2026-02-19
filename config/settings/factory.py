@@ -44,8 +44,9 @@ def get_django_dbs() -> DjangoDatabases:
 
 
 def get_django_db_dict() -> dict:
-    """Get the Django database settings as a dictionary."""
+    """Get the Django database settings as a dictionary with uppercase keys."""
     db = get_django_dbs()
+    # Now returns uppercase keys directly from serialization aliases
     return db.model_dump(mode="json", by_alias=True)
 
 

@@ -5,7 +5,9 @@ This module uses pydantic-settings to load configuration from .env files
 and environment variables, providing type validation and defaults.
 """
 
-from pydantic import Field
+from typing import Any
+
+from pydantic import Field, field_validator, json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +52,28 @@ class CommonEnvSettings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("SECRET_KEY", mode="before")
+    @classmethod
+    def empty_secret_key_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "django-insecure-change-this-in-production"
+        return v
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def validate_allowed_hosts(cls, v):
+        if isinstance(v, str):
+            parsed = json.loads(v)
+            # If explicitly set to empty, use defaults
+            if parsed == []:
+                return ["localhost", "127.0.0.1"]
+            return parsed
+        # If it's already a list and empty, use defaults
+        if isinstance(v, list) and v == []:
+            return ["localhost", "127.0.0.1"]
+        return v
+    
     # Helper properties for Django settings
     @property
     def secret_key(self) -> str:

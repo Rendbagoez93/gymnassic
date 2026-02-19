@@ -44,4 +44,6 @@ class GymConfig(YamlBaseSettings):
     model_config = SettingsConfigDict(
         extra="allow",  # Allow extra fields from YAML
         yaml_file_encoding="utf-8",
+        yaml_file="gym_profile.yaml",  # Default file (overridden by _yaml_files parameter)
+        secrets_dir=".",  # Current directory for secrets
     )

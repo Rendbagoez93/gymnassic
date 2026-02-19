@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,7 +25,10 @@ class DBEngineEnum(StrEnum):
 class BaseDatabaseSettings(BaseSettings):
     """Base database settings shared across all database types."""
 
-    engine: DBEngineEnum = DBEngineEnum.SQLITE
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.SQLITE,
+        serialization_alias="engine",
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="DATABASE_",
@@ -71,19 +74,85 @@ class BaseDatabaseSettings(BaseSettings):
 class SqliteDatabaseSettings(BaseDatabaseSettings):
     """Settings for SQLite database."""
 
-    engine: DBEngineEnum = DBEngineEnum.SQLITE
-    name: str = (Path(__file__).resolve().parent.parent.parent / "db.sqlite3").as_posix()
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.SQLITE,
+        serialization_alias="ENGINE",
+    )
+    name: str = Field(
+        default=(Path(__file__).resolve().parent.parent.parent / "db.sqlite3").as_posix(),
+        serialization_alias="NAME",
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def empty_str_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to use default value by raising validation error."""
+        # When empty string is provided, skip it so default will be used
+        if v == "" or v is None:
+            # Return the actual default value
+            return (Path(__file__).resolve().parent.parent.parent / "db.sqlite3").as_posix()
+        return v
 
 
 class PostgresDatabaseSettings(BaseDatabaseSettings):
     """Settings for PostgreSQL database."""
 
-    engine: DBEngineEnum = DBEngineEnum.POSTGRES
-    port: int = 5432
-    host: str = "localhost"
-    password: str = "postgres"
-    user: str = "postgres"
-    name: str = "gymnassic"
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.POSTGRES,
+        serialization_alias="ENGINE",
+    )
+    port: int = Field(
+        default=5432,
+        serialization_alias="PORT",
+    )
+    host: str = Field(
+        default="localhost",
+        serialization_alias="HOST",
+    )
+    password: str = Field(
+        default="postgres",
+        serialization_alias="PASSWORD",
+    )
+    user: str = Field(
+        default="postgres",
+        serialization_alias="USER",
+    )
+    name: str = Field(
+        default="gymnassic",
+        serialization_alias="NAME",
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def empty_name_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "gymnassic"
+        return v
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def empty_password_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "postgres"
+        return v
+
+    @field_validator("user", mode="before")
+    @classmethod
+    def empty_user_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "postgres"
+        return v
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def empty_host_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "localhost"
+        return v
 
 
 class DjangoDatabases(BaseModel):
