@@ -12,6 +12,8 @@ dependencies = [
     "django>=6.0.2",
     "django-extensions>=4.1",
     "django-filter>=25.2",
+    "djangorestframework-simplejwt>=5.5.0",
+    "drf-spectacular>=0.29.0",
     "pillow>=12.1.1",
     "pydantic[email]>=2.12.5",
     "pydantic-settings>=2.12.0",
@@ -26,6 +28,8 @@ dev = [
     "faker>=40.4.0",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-xdist>=3.8.0",
     "pytest-django>=4.12.0",
 ]
 formatting = [
@@ -34,7 +38,7 @@ formatting = [
 ]
 
 [tool.black]
-line-length = 88
+line-length = 125
 target-version = ['py314']
 include = '\.pyi?$'
 extend-exclude = '''

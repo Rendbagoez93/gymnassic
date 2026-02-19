@@ -1,87 +1,65 @@
-"""
-Settings Factory Module
+"""Settings factory module for dependency injection and configuration management.
 
-This module provides a unified factory for all Django settings configuration.
-It coordinates environment settings, database settings, and gym configuration.
-
-The factory pattern allows for easy extension and testing of different
-environment configurations.
+Provides factory functions to create and manage application settings including:
+- Environment settings (CommonEnvSettings)
+- Database configuration (DjangoDatabases)
+- Gym configuration (GymConfig)
 """
+
+from pathlib import Path
 
 from dependency_injector import containers, providers
 
-from .databases import DatabaseSettings, get_database_settings_instance
-from .envcommon import __COMMON, get_settings_instance
-
-# Import gym config with error handling
-try:
-    from .gymconf import GymProfile, get_gym_config
-except Exception:
-    GymProfile = None
-    get_gym_config = None
-
-
-class SettingsContainer(containers.DeclarativeContainer):
-    """
-    Dependency injection container for all settings.
-
-    This container coordinates:
-    - Environment settings (common Django settings)
-    - Database settings
-    - Gym configuration (from YAML)
-
-    All settings are singletons to ensure single instances.
-    """
-
-    # Environment settings provider
-    env_settings = providers.Singleton(get_settings_instance)
-
-    # Database settings provider
-    db_settings = providers.Singleton(get_database_settings_instance)
-
-    # Gym config provider (lazy loaded)
-    if get_gym_config is not None:
-        gym_config = providers.Singleton(get_gym_config)
-    else:
-        gym_config = providers.Singleton(lambda: None)
+from .databases import (
+    BaseDatabaseSettings,
+    DBEngineEnum,
+    DjangoDatabases,
+    PostgresDatabaseSettings,
+    SqliteDatabaseSettings,
+)
+from .envcommon import CommonEnvSettings
+from .gymconf import GymConfig
 
 
-# Initialize container
-container = SettingsContainer()
+class DbContainer(containers.DeclarativeContainer):
+    config = providers.Configuration()
+    db_factory = providers.FactoryAggregate(
+        {
+            DBEngineEnum.SQLITE: providers.Factory(SqliteDatabaseSettings),
+            DBEngineEnum.POSTGRES: providers.Factory(PostgresDatabaseSettings),
+        }
+    )
+    fct = providers.Factory(db_factory, config.engine)
+    django_databases = providers.Singleton(
+        DjangoDatabases,
+        default=fct,
+    )
 
 
-def get_settings() -> __COMMON:
-    """Get environment settings instance."""
-    return container.env_settings()
+def get_django_dbs() -> DjangoDatabases:
+    """Get the Django database settings."""
+    db_container = DbContainer()
+    db_container.config.from_pydantic(BaseDatabaseSettings())
+    return db_container.django_databases()
 
 
-def get_database_settings() -> DatabaseSettings:
-    """Get database settings instance."""
-    return container.db_settings()
+def get_django_db_dict() -> dict:
+    """Get the Django database settings as a dictionary with uppercase keys."""
+    db = get_django_dbs()
+    # Now returns uppercase keys directly from serialization aliases
+    return db.model_dump(mode="json", by_alias=True)
 
 
-def get_gym_settings() -> GymProfile | None:
-    """Get gym configuration instance."""
-    return container.gym_config()
+def get_settings() -> CommonEnvSettings:
+    return CommonEnvSettings()
 
 
-def override_settings(settings_instance: __COMMON) -> None:
-    """Override environment settings (for testing)."""
-    container.env_settings.override(providers.Singleton(lambda: settings_instance))
+def get_gym_settings() -> GymConfig:
+    # Get the project root directory (three levels up from settings/factory.py)
+    project_root = Path(__file__).resolve().parent.parent.parent
+    gym_config_path = project_root / "gym_profile.yaml"
 
+    if not gym_config_path.exists():
+        raise FileNotFoundError(f"Gym configuration file not found: {gym_config_path}")
 
-def reset_settings() -> None:
-    """Reset environment settings override."""
-    container.env_settings.reset_override()
-
-
-# Export main components
-__all__ = [
-    "SettingsContainer",
-    "container",
-    "get_settings",
-    "get_database_settings",
-    "get_gym_settings",
-    "override_settings",
-    "reset_settings",
-]
+    return GymConfig(_yaml_files=[gym_config_path])

@@ -1,235 +1,162 @@
 """
-Database Configuration Module
+Database configuration settings for Django.
 
-This module handles all database-related configuration for the Django application.
-It provides environment-aware database settings using Pydantic for validation.
-
-Usage:
-    from config.settings.databases import get_database_config, DATABASES
+This module provides database configuration using Pydantic for type safety
+and validation. Supports SQLite and PostgreSQL databases with environment-based
+configuration.
 """
 
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from shared.monad import get_env
 
-# Base directory for the project
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+class DBEngineEnum(StrEnum):
+    """Supported database engines."""
+
+    SQLITE = "django.db.backends.sqlite3"
+    POSTGRES = "django.db.backends.postgresql"
 
 
-class DatabaseSettings(BaseSettings):
+class BaseDatabaseSettings(BaseSettings):
+    """Base database settings shared across all database types."""
+
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.SQLITE,
+        serialization_alias="engine",
+    )
+
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
+        env_prefix="DATABASE_",
         extra="ignore",
+        frozen=True,
+        alias_generator=lambda field_name: field_name.upper(),
+        populate_by_name=True,
+        env_file=".env",
     )
 
-    # Environment detection
-    environment: Literal["local", "production"] = Field(
-        default="local",
-        description="Current environment (local or production)",
+    @field_validator("engine", mode="before")
+    @classmethod
+    def validate_engine(cls, v: Any) -> DBEngineEnum:
+        if isinstance(v, DBEngineEnum):
+            return v
+
+        valid_names = [member.name for member in DBEngineEnum]
+        valid_values = [member.value for member in DBEngineEnum]
+
+        if isinstance(v, str):
+            # Try to match by name (case-insensitive)
+            try:
+                return DBEngineEnum[v.upper()]
+            except KeyError:
+                pass
+
+            # Try to match by value
+            for enum_member in DBEngineEnum:
+                if v == enum_member.value:
+                    return enum_member
+
+        raise PydanticCustomError(
+            "enum",
+            f"Input should be one of the enum names: {valid_names} or one of the enum values: {valid_values}",
+            {
+                "input": v,
+                "valid_names": valid_names,
+                "valid_values": valid_values,
+            },
+        )
+
+
+class SqliteDatabaseSettings(BaseDatabaseSettings):
+    """Settings for SQLite database."""
+
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.SQLITE,
+        serialization_alias="ENGINE",
+    )
+    name: str = Field(
+        default=(Path(__file__).resolve().parent.parent.parent / "db.sqlite3").as_posix(),
+        serialization_alias="NAME",
     )
 
-    # Database Configuration
-    database_engine: str = Field(
-        default="django.db.backends.sqlite3",
-        description="Database engine",
+    @field_validator("name", mode="before")
+    @classmethod
+    def empty_str_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to use default value by raising validation error."""
+        # When empty string is provided, skip it so default will be used
+        if v == "" or v is None:
+            # Return the actual default value
+            return (Path(__file__).resolve().parent.parent.parent / "db.sqlite3").as_posix()
+        return v
+
+
+class PostgresDatabaseSettings(BaseDatabaseSettings):
+    """Settings for PostgreSQL database."""
+
+    engine: DBEngineEnum = Field(
+        default=DBEngineEnum.POSTGRES,
+        serialization_alias="ENGINE",
     )
-
-    database_name: str = Field(
-        default=str(BASE_DIR / "db.sqlite3"),
-        description="Database name or path",
+    port: int = Field(
+        default=5432,
+        serialization_alias="PORT",
     )
-
-    database_user: str = Field(
-        default="",
-        description="Database user",
-    )
-
-    database_password: SecretStr = Field(
-        default="",
-        description="Database password",
-    )
-
-    database_host: str = Field(
-        default="",
-        description="Database host",
-    )
-
-    database_port: str = Field(
-        default="",
-        description="Database port",
-    )
-
-    # Connection pooling and options
-    database_conn_max_age: int = Field(
-        default=0,
-        description="Database connection max age in seconds (0 = no persistent connections)",
-    )
-
-    database_conn_health_checks: bool = Field(
-        default=False,
-        description="Enable connection health checks",
-    )
-
-    def get_database_config(self, alias: str = "default") -> dict:
-        config = {
-            "ENGINE": self.database_engine,
-            "NAME": self.database_name,
-        }
-
-        # Add optional fields only if they're provided
-        if self.database_user:
-            config["USER"] = self.database_user
-
-        if self.database_password:
-            # Get secret value if it's a SecretStr
-            password = self.database_password
-            if isinstance(password, SecretStr):
-                config["PASSWORD"] = password.get_secret_value()
-            else:
-                config["PASSWORD"] = str(password)
-
-        if self.database_host:
-            config["HOST"] = self.database_host
-
-        if self.database_port:
-            config["PORT"] = self.database_port
-
-        # Add connection pooling settings
-        if self.database_conn_max_age > 0:
-            config["CONN_MAX_AGE"] = self.database_conn_max_age
-
-        if self.database_conn_health_checks:
-            config["CONN_HEALTH_CHECKS"] = self.database_conn_health_checks
-
-        return config
-
-    def is_sqlite(self) -> bool:
-        """Check if using SQLite database."""
-        return "sqlite" in self.database_engine.lower()
-
-    def is_postgresql(self) -> bool:
-        """Check if using PostgreSQL database."""
-        return "postgresql" in self.database_engine.lower()
-
-    def is_mysql(self) -> bool:
-        """Check if using MySQL database."""
-        return "mysql" in self.database_engine.lower()
-
-
-class LocalDatabaseSettings(DatabaseSettings):
-    environment: Literal["local"] = "local"
-    database_engine: str = "django.db.backends.sqlite3"
-    database_name: str = str(BASE_DIR / "db.sqlite3")
-
-
-class ProductionDatabaseSettings(DatabaseSettings):
-    environment: Literal["production"] = "production"
-
-    # Production typically uses PostgreSQL or MySQL
-    database_engine: str = Field(
-        default="django.db.backends.postgresql",
-        description="Production database engine",
-    )
-
-    database_name: str = Field(
-        ...,
-        description="Production database name (must be set)",
-    )
-
-    database_user: str = Field(
-        ...,
-        description="Production database user (must be set)",
-    )
-
-    database_password: SecretStr = Field(
-        ...,
-        description="Production database password (must be set)",
-    )
-
-    database_host: str = Field(
+    host: str = Field(
         default="localhost",
-        description="Production database host",
+        serialization_alias="HOST",
+    )
+    password: str = Field(
+        default="postgres",
+        serialization_alias="PASSWORD",
+    )
+    user: str = Field(
+        default="postgres",
+        serialization_alias="USER",
+    )
+    name: str = Field(
+        default="gymnassic",
+        serialization_alias="NAME",
     )
 
-    database_port: str = Field(
-        default="5432",
-        description="Production database port",
-    )
+    @field_validator("name", mode="before")
+    @classmethod
+    def empty_name_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "gymnassic"
+        return v
 
-    # Enable connection pooling in production
-    database_conn_max_age: int = Field(
-        default=600,
-        description="Connection max age in seconds (default: 10 minutes)",
-    )
+    @field_validator("password", mode="before")
+    @classmethod
+    def empty_password_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "postgres"
+        return v
 
-    database_conn_health_checks: bool = Field(
-        default=True,
-        description="Enable connection health checks in production",
-    )
+    @field_validator("user", mode="before")
+    @classmethod
+    def empty_user_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "postgres"
+        return v
 
-
-def get_database_settings() -> DatabaseSettings:
-    """
-    Factory function to get appropriate database settings based on environment.
-
-    Reads DJANGO_ENV or ENV environment variable to determine which
-    settings class to instantiate.
-
-    Returns:
-        DatabaseSettings: Environment-specific database settings instance
-    """
-    # Determine environment from environment variables
-    env = get_env("DJANGO_ENV", None).unwrap()
-    if env is None:
-        env = get_env("ENV", "local").unwrap()
-
-    # Normalize environment value
-    env = str(env).lower().strip()
-
-    # Return appropriate settings class based on environment
-    if env == "production":
-        return ProductionDatabaseSettings()
-    else:
-        # Default to local for development
-        return LocalDatabaseSettings()
+    @field_validator("host", mode="before")
+    @classmethod
+    def empty_host_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "localhost"
+        return v
 
 
-# Singleton instance for module-level access
-_db_settings_instance: DatabaseSettings | None = None
+class DjangoDatabases(BaseModel):
+    """Django database settings container."""
 
+    default: PostgresDatabaseSettings | SqliteDatabaseSettings
 
-def get_database_settings_instance() -> DatabaseSettings:
-    global _db_settings_instance
-
-    if _db_settings_instance is None:
-        _db_settings_instance = get_database_settings()
-
-    return _db_settings_instance
-
-
-def get_database_config(alias: str = "default") -> dict:
-    db_settings = get_database_settings_instance()
-    return db_settings.get_database_config(alias=alias)
-
-
-# Django DATABASES configuration
-DATABASES = {
-    "default": get_database_config(),
-}
-
-# Export main components
-__all__ = [
-    "DatabaseSettings",
-    "LocalDatabaseSettings",
-    "ProductionDatabaseSettings",
-    "get_database_settings",
-    "get_database_settings_instance",
-    "get_database_config",
-    "DATABASES",
-]

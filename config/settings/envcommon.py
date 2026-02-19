@@ -1,224 +1,136 @@
 """
-Environment Common Settings Module
+Environment-specific common settings loaded from environment variables.
 
-This module provides environment-specific configuration using Pydantic Settings.
-It defines core Django settings that are environment-aware and detachable.
-
-Usage:
-    from config.settings.envcommon import get_common_settings
-    settings = get_common_settings()
+This module uses pydantic-settings to load configuration from .env files
+and environment variables, providing type validation and defaults.
 """
 
-from pathlib import Path
-from typing import Literal
+from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from shared.monad import get_env
 
-# Base directory for the project
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+class CommonEnvSettings(BaseSettings):
+    """Common environment settings for all deployment environments."""
 
-
-class __COMMON(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-    # Environment Configuration
-    environment: Literal["local", "production"] = Field(
-        default="local",
-        description="Current environment (local or production)",
-    )
-
-    # Core Django Settings
-    secret_key: str = Field(
-        default="django-insecure-change-me-in-production",
+    # Security
+    SECRET_KEY: str = Field(
+        default="django-insecure-change-this-in-production",
         description="Django secret key for cryptographic signing",
     )
 
-    debug: bool = Field(
-        default=True,
-        description="Django DEBUG mode",
-    )
+    # Debug and Environment
+    DEBUG: bool = Field(default=False, description="Enable debug mode")
+    ENVIRONMENT: str = Field(default="local", description="Current environment (local, dev, staging, prod)")
 
-    allowed_hosts: str = Field(
-        default="localhost,127.0.0.1",
-        description="Comma-separated list of allowed hosts",
+    # Allowed Hosts
+    ALLOWED_HOSTS: list[str] = Field(
+        default=["localhost", "127.0.0.1"],
+        description="List of allowed host/domain names",
     )
 
     # Internationalization
-    language_code: str = Field(
-        default="en-us",
-        description="Django language code",
-    )
+    LANGUAGE_CODE: str = Field(default="en-us", description="Language code for the application")
+    TIME_ZONE: str = Field(default="Asia/Jakarta", description="Time zone for the application")
 
-    timezone: str = Field(
-        default="Asia/Jakarta",
-        description="Django timezone",
-    )
-
-    # Static and Media Files
-    static_url: str = Field(
-        default="/static/",
-        description="Static files URL prefix",
-    )
-
-    media_url: str = Field(
-        default="/media/",
-        description="Media files URL prefix",
-    )
-
-    # Email Configuration
-    email_backend: str = Field(
+    # Email Configuration (for production)
+    EMAIL_BACKEND: str = Field(
         default="django.core.mail.backends.console.EmailBackend",
-        description="Django email backend",
+        description="Email backend to use",
+    )
+    EMAIL_HOST: str = Field(default="localhost", description="Email server host")
+    EMAIL_PORT: int = Field(default=587, description="Email server port")
+    EMAIL_USE_TLS: bool = Field(default=True, description="Use TLS for email")
+    EMAIL_HOST_USER: str = Field(default="", description="Email server username")
+    EMAIL_HOST_PASSWORD: str = Field(default="", description="Email server password")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
     )
 
-    email_host: str = Field(
-        default="localhost",
-        description="Email server host",
-    )
-
-    email_port: int = Field(
-        default=587,
-        description="Email server port",
-    )
-
-    email_use_tls: bool = Field(
-        default=True,
-        description="Use TLS for email",
-    )
-
-    email_host_user: str = Field(
-        default="",
-        description="Email host user",
-    )
-
-    email_host_password: str = Field(
-        default="",
-        description="Email host password",
-    )
-
-    @field_validator("environment", mode="before")
+    @field_validator("SECRET_KEY", mode="before")
     @classmethod
-    def validate_environment(cls, v: str) -> str:
-        """Validate environment value."""
-        if v not in ["local", "production"]:
-            raise ValueError(f"Invalid environment: {v}. Must be 'local' or 'production'")
+    def empty_secret_key_to_default(cls, v: Any) -> Any:
+        """Convert empty strings to default value."""
+        if v == "" or v is None:
+            return "django-insecure-change-this-in-production"
         return v
 
-    @field_validator("secret_key")
+    @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod
-    def validate_secret_key(cls, v: str, info) -> str:
-        """Validate secret key in production."""
-        if info.data.get("environment") == "production":
-            if v == "django-insecure-change-me-in-production":
-                raise ValueError(
-                    "You must set a secure SECRET_KEY in production environment"
-                )
+    def validate_allowed_hosts(cls, v):
+        if isinstance(v, str):
+            parsed = json.loads(v)
+            # If explicitly set to empty, use defaults
+            if parsed == []:
+                return ["localhost", "127.0.0.1"]
+            return parsed
+        # If it's already a list and empty, use defaults
+        if isinstance(v, list) and v == []:
+            return ["localhost", "127.0.0.1"]
         return v
+    
+    # Helper properties for Django settings
+    @property
+    def secret_key(self) -> str:
+        """Return secret key in lowercase for Django settings."""
+        return self.SECRET_KEY
 
-    def get_allowed_hosts_list(self) -> list[str]:
-        """Parse allowed hosts string into a list."""
-        if isinstance(self.allowed_hosts, str):
-            return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
-        return list(self.allowed_hosts)
+    @property
+    def debug(self) -> bool:
+        """Return debug flag in lowercase for Django settings."""
+        return self.DEBUG
 
-    def is_local(self) -> bool:
-        """Check if running in local environment."""
-        return self.environment == "local"
+    @property
+    def environment(self) -> str:
+        """Return environment in lowercase for Django settings."""
+        return self.ENVIRONMENT
 
-    def is_production(self) -> bool:
-        """Check if running in production environment."""
-        return self.environment == "production"
+    @property
+    def allowed_hosts(self) -> list[str]:
+        """Return allowed hosts in lowercase for Django settings."""
+        return self.ALLOWED_HOSTS
 
+    @property
+    def language_code(self) -> str:
+        """Return language code in lowercase for Django settings."""
+        return self.LANGUAGE_CODE
 
-class LocalSettings(__COMMON):
-    environment: Literal["local"] = "local"
-    debug: bool = True
+    @property
+    def timezone(self) -> str:
+        """Return timezone in lowercase for Django settings."""
+        return self.TIME_ZONE
 
-    # Development-specific settings
-    allowed_hosts: str = "localhost,127.0.0.1,0.0.0.0"
+    @property
+    def email_backend(self) -> str:
+        """Return email backend in lowercase for Django settings."""
+        return self.EMAIL_BACKEND
 
+    @property
+    def email_host(self) -> str:
+        """Return email host in lowercase for Django settings."""
+        return self.EMAIL_HOST
 
-class ProductionSettings(__COMMON):
-    environment: Literal["production"] = "production"
-    debug: bool = False
+    @property
+    def email_port(self) -> int:
+        """Return email port in lowercase for Django settings."""
+        return self.EMAIL_PORT
 
-    # Production requires explicit configuration
-    secret_key: str = Field(
-        ...,
-        description="Production secret key (must be set via environment variable)",
-    )
+    @property
+    def email_use_tls(self) -> bool:
+        """Return email use TLS flag in lowercase for Django settings."""
+        return self.EMAIL_USE_TLS
 
-    # Production email backend
-    email_backend: str = Field(
-        default="django.core.mail.backends.smtp.EmailBackend",
-        description="Production email backend (SMTP)",
-    )
+    @property
+    def email_host_user(self) -> str:
+        """Return email host user in lowercase for Django settings."""
+        return self.EMAIL_HOST_USER
 
-    email_host: str = Field(
-        default="",
-        description="Production email server host (must be set)",
-    )
-
-    email_host_user: str = Field(
-        default="",
-        description="Production email user (must be set)",
-    )
-
-    email_host_password: str = Field(
-        default="",
-        description="Production email password (must be set)",
-    )
-
-
-def get_common_settings() -> __COMMON:
-    # Determine environment from environment variables
-    env = get_env("DJANGO_ENV", None).unwrap()
-    if env is None:
-        env = get_env("ENV", "local").unwrap()
-
-    # Normalize environment value
-    env = str(env).lower().strip()
-
-    # Return appropriate settings class based on environment
-    if env == "production":
-        return ProductionSettings()
-    else:
-        # Default to local for development
-        return LocalSettings()
-
-
-def get_env_type() -> str:
-    settings = get_common_settings()
-    return settings.environment
-
-
-# Singleton instance for module-level access
-_settings_instance: __COMMON | None = None
-
-
-def get_settings_instance() -> __COMMON:
-    global _settings_instance
-
-    if _settings_instance is None:
-        _settings_instance = get_common_settings()
-
-    return _settings_instance
-
-
-# Export main components
-__all__ = [
-    "__COMMON",
-    "LocalSettings",
-    "ProductionSettings",
-    "get_common_settings",
-    "get_env_type",
-    "get_settings_instance",
-]
+    @property
+    def email_host_password(self) -> str:
+        """Return email host password in lowercase for Django settings."""
+        return self.EMAIL_HOST_PASSWORD

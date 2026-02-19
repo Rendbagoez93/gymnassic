@@ -114,9 +114,6 @@ class SoftDeleteable(TimeStampedModel, SoftDelete, BaseModel):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        """
-        Override save to handle both timestamp and soft delete logic.
-        """
         # Handle timestamps
         if not self.pk:
             if not self.created_at:
