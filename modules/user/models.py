@@ -1,24 +1,17 @@
+from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
 
-from shared.base_models import SoftDeleteable
+from shared.base_models import SoftDelete
 
 
-class User(SoftDeleteable):
-    # Name fields
-    first_name = models.CharField(
-        max_length=100,
-        help_text="User's first name"
-    )
-    last_name = models.CharField(
-        max_length=100,
-        help_text="User's last name"
-    )
+class User(AbstractUser, SoftDelete):
+    # AbstractUser provides: username, first_name, last_name, email (base), password, groups, etc.
     
     # KTP (Indonesian ID Number) - 16 digits
     phone_regex = RegexValidator(
-        regex=r'^\+62\d{9,13}$',
-        message="Phone number must be entered in the format: '+62812xxxxxxxx'. Indonesian numbers start with +62 followed by 9-13 digits."
+        regex=r'^(?:\+62|62|0)\d{9,13}$',
+        message="Phone number must start with +62, 62, or 0 followed by 9-13 digits."
     )
     ktp_regex = RegexValidator(
         regex=r'^\d{16}$',
@@ -27,7 +20,6 @@ class User(SoftDeleteable):
     
     ktp_number = models.CharField(
         max_length=16,
-        unique=True,
         validators=[ktp_regex],
         help_text="Indonesian ID number (KTP) - 16 digits",
         verbose_name="KTP Number"
@@ -44,28 +36,49 @@ class User(SoftDeleteable):
         help_text="User's complete address"
     )
     
-    # Phone Number
+    # Phone Number (flexible input, normalized storage)
     phone_number = models.CharField(
         max_length=17,
         validators=[phone_regex],
-        help_text="Indonesian phone number (format: +62812xxxxxxxx)"
-    )
-    
-    # Email
-    email = models.EmailField(
-        unique=True,
-        help_text="User's email address"
+        help_text="Indonesian phone number (accepts +62, 62, or 0 prefix)"
     )
     
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-date_joined']
         verbose_name = "User"
         verbose_name_plural = "Users"
         indexes = [
-            models.Index(fields=['ktp_number']),
-            models.Index(fields=['email']),
             models.Index(fields=['last_name', 'first_name']),
         ]
+        # Conditional unique constraints for soft-delete compatibility
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ktp_number'],
+                condition=models.Q(deleted_at__isnull=True),
+                name='unique_ktp_when_not_deleted'
+            ),
+            models.UniqueConstraint(
+                fields=['email'],
+                condition=models.Q(deleted_at__isnull=True),
+                name='unique_email_when_not_deleted'
+            ),
+        ]
+    
+    def clean(self):
+        """Normalize phone number to consistent +62 format."""
+        super().clean()
+        if self.phone_number:
+            # Remove any whitespace
+            phone = self.phone_number.strip().replace(' ', '').replace('-', '')
+            # Normalize to +62 format
+            if phone.startswith('0'):
+                # Convert 08xx to +628xx
+                phone = '+62' + phone[1:]
+            elif phone.startswith('62'):
+                # Convert 628xx to +628xx
+                phone = '+' + phone
+            # If already starts with +62, keep as is
+            self.phone_number = phone
     
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.ktp_number})"
