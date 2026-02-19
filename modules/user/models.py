@@ -1,8 +1,24 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.core.validators import RegexValidator
 from django.db import models
 
 from shared.base_models import SoftDelete
+
+
+class SoftDeleteUserManager(UserManager):
+    """Custom manager that combines UserManager with soft-delete filtering."""
+    
+    def get_queryset(self):
+        """Return only non-deleted users."""
+        return super().get_queryset().filter(deleted_at__isnull=True)
+    
+    def all_with_deleted(self):
+        """Return all users including soft-deleted ones."""
+        return super().get_queryset()
+    
+    def deleted_only(self):
+        """Return only soft-deleted users."""
+        return super().get_queryset().filter(deleted_at__isnull=False)
 
 
 class User(AbstractUser, SoftDelete):
@@ -10,7 +26,7 @@ class User(AbstractUser, SoftDelete):
     
     # KTP (Indonesian ID Number) - 16 digits
     phone_regex = RegexValidator(
-        regex=r'^(?:\+62|62|0)\d{9,13}$',
+        regex=r'^(?:\+62|62|0)[0-9\s\-]{9,15}$',
         message="Phone number must start with +62, 62, or 0 followed by 9-13 digits."
     )
     ktp_regex = RegexValidator(
@@ -42,6 +58,10 @@ class User(AbstractUser, SoftDelete):
         validators=[phone_regex],
         help_text="Indonesian phone number (accepts +62, 62, or 0 prefix)"
     )
+    
+    # Custom manager that handles both user creation and soft deletion
+    objects = SoftDeleteUserManager()
+    all_objects = models.Manager()  # Access to all users including deleted
     
     class Meta:
         ordering = ['-date_joined']
@@ -79,6 +99,18 @@ class User(AbstractUser, SoftDelete):
                 phone = '+' + phone
             # If already starts with +62, keep as is
             self.phone_number = phone
+    
+    def save(self, *args, **kwargs):
+        """Override save to ensure phone normalization happens."""
+        # Normalize phone number before saving
+        if self.phone_number:
+            phone = self.phone_number.strip().replace(' ', '').replace('-', '')
+            if phone.startswith('0'):
+                phone = '+62' + phone[1:]
+            elif phone.startswith('62') and not phone.startswith('+62'):
+                phone = '+' + phone
+            self.phone_number = phone
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.ktp_number})"

@@ -105,6 +105,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database configuration is loaded from databases.py module
 
 
+# Custom User Model
+AUTH_USER_MODEL = 'user.User'
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
