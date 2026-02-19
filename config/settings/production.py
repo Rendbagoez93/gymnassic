@@ -24,11 +24,12 @@ SECURE_HSTS_PRELOAD = True
 
 # Email backend for production (SMTP)
 # Configure these in environment variables
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env_settings.database_name  # noqa: F405 - Will be configured via env vars
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-# EMAIL_HOST_USER and EMAIL_HOST_PASSWORD should be set in environment variables
+EMAIL_BACKEND = env_settings.email_backend  # noqa: F405
+EMAIL_HOST = env_settings.email_host  # noqa: F405
+EMAIL_PORT = env_settings.email_port  # noqa: F405
+EMAIL_USE_TLS = env_settings.email_use_tls  # noqa: F405
+EMAIL_HOST_USER = env_settings.email_host_user  # noqa: F405
+EMAIL_HOST_PASSWORD = env_settings.email_host_password  # noqa: F405
 
 # Logging configuration for production
 LOGGING = {

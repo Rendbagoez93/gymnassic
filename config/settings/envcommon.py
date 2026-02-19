@@ -1,116 +1,224 @@
 """
-Common environment settings using pydantic-settings.
-All environment variables use '__COMMON' prefix.
+Environment Common Settings Module
+
+This module provides environment-specific configuration using Pydantic Settings.
+It defines core Django settings that are environment-aware and detachable.
+
+Usage:
+    from config.settings.envcommon import get_common_settings
+    settings = get_common_settings()
 """
+
+from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from shared.monad import get_env
 
-class CommonSettings(BaseSettings):
-    """Base settings class for all environments."""
+# Base directory for the project
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+
+class __COMMON(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="__COMMON_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
 
-    # Core Django settings
-    secret_key: str = Field(
-        default="django-insecure-default-key-change-in-production",
-        description="Django SECRET_KEY",
+    # Environment Configuration
+    environment: Literal["local", "production"] = Field(
+        default="local",
+        description="Current environment (local or production)",
     )
-    debug: bool = Field(default=False, description="Django DEBUG mode")
+
+    # Core Django Settings
+    secret_key: str = Field(
+        default="django-insecure-change-me-in-production",
+        description="Django secret key for cryptographic signing",
+    )
+
+    debug: bool = Field(
+        default=True,
+        description="Django DEBUG mode",
+    )
+
     allowed_hosts: str = Field(
         default="localhost,127.0.0.1",
-        description="Django ALLOWED_HOSTS (comma-separated)",
+        description="Comma-separated list of allowed hosts",
     )
 
-    # Environment identification
-    environment: str = Field(
-        default="development",
-        description="Current environment (development/production)",
+    # Internationalization
+    language_code: str = Field(
+        default="en-us",
+        description="Django language code",
     )
 
-    # Database settings
-    database_url: str = Field(
-        default="sqlite:///db.sqlite3",
-        description="Database connection URL",
-    )
-    database_name: str | None = Field(
-        default=None,
-        description="Database name (optional, extracted from URL if not provided)",
+    timezone: str = Field(
+        default="Asia/Jakarta",
+        description="Django timezone",
     )
 
-    # Application settings
-    log_level: str = Field(default="INFO", description="Logging level")
-    timezone: str = Field(default="UTC", description="Application timezone")
-    language_code: str = Field(default="en-us", description="Default language code")
+    # Static and Media Files
+    static_url: str = Field(
+        default="/static/",
+        description="Static files URL prefix",
+    )
+
+    media_url: str = Field(
+        default="/media/",
+        description="Media files URL prefix",
+    )
+
+    # Email Configuration
+    email_backend: str = Field(
+        default="django.core.mail.backends.console.EmailBackend",
+        description="Django email backend",
+    )
+
+    email_host: str = Field(
+        default="localhost",
+        description="Email server host",
+    )
+
+    email_port: int = Field(
+        default=587,
+        description="Email server port",
+    )
+
+    email_use_tls: bool = Field(
+        default=True,
+        description="Use TLS for email",
+    )
+
+    email_host_user: str = Field(
+        default="",
+        description="Email host user",
+    )
+
+    email_host_password: str = Field(
+        default="",
+        description="Email host password",
+    )
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        """Validate environment value."""
+        if v not in ["local", "production"]:
+            raise ValueError(f"Invalid environment: {v}. Must be 'local' or 'production'")
+        return v
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str, info) -> str:
+        """Validate secret key in production."""
+        if info.data.get("environment") == "production":
+            if v == "django-insecure-change-me-in-production":
+                raise ValueError(
+                    "You must set a secure SECRET_KEY in production environment"
+                )
+        return v
 
     def get_allowed_hosts_list(self) -> list[str]:
-        """Convert allowed_hosts string to list."""
+        """Parse allowed hosts string into a list."""
         if isinstance(self.allowed_hosts, str):
             return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
-        return self.allowed_hosts
+        return list(self.allowed_hosts)
 
-    @field_validator("log_level")
-    @classmethod
-    def validate_log_level(cls, v):
-        """Validate log level."""
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        v_upper = v.upper()
-        if v_upper not in valid_levels:
-            raise ValueError(f"log_level must be one of {valid_levels}")
-        return v_upper
+    def is_local(self) -> bool:
+        """Check if running in local environment."""
+        return self.environment == "local"
 
-    @field_validator("environment")
-    @classmethod
-    def validate_environment(cls, v):
-        """Validate environment name."""
-        valid_envs = ["development", "production"]
-        v_lower = v.lower()
-        if v_lower not in valid_envs:
-            raise ValueError(f"environment must be one of {valid_envs}")
-        return v_lower
+    def is_production(self) -> bool:
+        """Check if running in production environment."""
+        return self.environment == "production"
 
 
-class DevelopmentSettings(CommonSettings):
-    """Development environment settings."""
+class LocalSettings(__COMMON):
+    environment: Literal["local"] = "local"
+    debug: bool = True
 
-    model_config = SettingsConfigDict(
-        env_prefix="__COMMON_",
-        env_file=".env.development",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-    debug: bool = Field(default=True, description="Django DEBUG mode for development")
-    environment: str = Field(default="development", description="Development environment")
-    log_level: str = Field(default="DEBUG", description="Debug logging for development")
+    # Development-specific settings
+    allowed_hosts: str = "localhost,127.0.0.1,0.0.0.0"
 
 
-class ProductionSettings(CommonSettings):
-    """Production environment settings."""
+class ProductionSettings(__COMMON):
+    environment: Literal["production"] = "production"
+    debug: bool = False
 
-    model_config = SettingsConfigDict(
-        env_prefix="__COMMON_",
-        env_file=".env.production",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-    debug: bool = Field(default=False, description="Django DEBUG mode for production")
-    environment: str = Field(default="production", description="Production environment")
+    # Production requires explicit configuration
     secret_key: str = Field(
-        ...,  # Required in production
-        description="Django SECRET_KEY - MUST be set in production",
+        ...,
+        description="Production secret key (must be set via environment variable)",
     )
-    allowed_hosts: str = Field(
-        default="",  # Empty by default, must be configured
-        description="Django ALLOWED_HOSTS for production (comma-separated)",
+
+    # Production email backend
+    email_backend: str = Field(
+        default="django.core.mail.backends.smtp.EmailBackend",
+        description="Production email backend (SMTP)",
     )
+
+    email_host: str = Field(
+        default="",
+        description="Production email server host (must be set)",
+    )
+
+    email_host_user: str = Field(
+        default="",
+        description="Production email user (must be set)",
+    )
+
+    email_host_password: str = Field(
+        default="",
+        description="Production email password (must be set)",
+    )
+
+
+def get_common_settings() -> __COMMON:
+    # Determine environment from environment variables
+    env = get_env("DJANGO_ENV", None).unwrap()
+    if env is None:
+        env = get_env("ENV", "local").unwrap()
+
+    # Normalize environment value
+    env = str(env).lower().strip()
+
+    # Return appropriate settings class based on environment
+    if env == "production":
+        return ProductionSettings()
+    else:
+        # Default to local for development
+        return LocalSettings()
+
+
+def get_env_type() -> str:
+    settings = get_common_settings()
+    return settings.environment
+
+
+# Singleton instance for module-level access
+_settings_instance: __COMMON | None = None
+
+
+def get_settings_instance() -> __COMMON:
+    global _settings_instance
+
+    if _settings_instance is None:
+        _settings_instance = get_common_settings()
+
+    return _settings_instance
+
+
+# Export main components
+__all__ = [
+    "__COMMON",
+    "LocalSettings",
+    "ProductionSettings",
+    "get_common_settings",
+    "get_env_type",
+    "get_settings_instance",
+]

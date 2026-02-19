@@ -167,16 +167,6 @@ class GymConfigLoader:
             return yaml.safe_load(f)
 
     def load_and_validate(self) -> GymProfile:
-        """
-        Load the gym configuration from YAML and validate it.
-
-        Returns:
-            GymProfile: Validated gym profile configuration
-
-        Raises:
-            FileNotFoundError: If configuration file doesn't exist
-            ValueError: If configuration validation fails
-        """
         config_data = self.load_config()
 
         # Create and validate the Pydantic model
@@ -192,27 +182,11 @@ gym_config_loader = GymConfigLoader()
 
 
 def load_gym_config() -> GymProfile:
-    """
-    Load and validate gym configuration from gym_profile.yaml.
-
-    Returns:
-        GymProfile: Validated gym profile configuration
-
-    Raises:
-        FileNotFoundError: If configuration file doesn't exist
-        ValueError: If configuration validation fails
-    """
     return gym_config_loader.load_and_validate()
 
 
 # Load configuration at module import (lazy loading alternative)
 def get_gym_config() -> GymProfile:
-    """
-    Get gym configuration with caching.
-
-    Returns:
-        GymProfile: Cached or newly loaded gym profile configuration
-    """
     if not hasattr(get_gym_config, "_cached_config"):
         get_gym_config._cached_config = load_gym_config()
     return get_gym_config._cached_config

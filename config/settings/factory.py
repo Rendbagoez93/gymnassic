@@ -1,96 +1,87 @@
 """
-Environment factory for attaching and detaching environment configurations.
-Provides a clean interface for loading different environment settings.
+Settings Factory Module
+
+This module provides a unified factory for all Django settings configuration.
+It coordinates environment settings, database settings, and gym configuration.
+
+The factory pattern allows for easy extension and testing of different
+environment configurations.
 """
 
-import os
-from typing import Literal
-from shared.monad import Either
-from .envcommon import CommonSettings, DevelopmentSettings, ProductionSettings
+from dependency_injector import containers, providers
+
+from .databases import DatabaseSettings, get_database_settings_instance
+from .envcommon import __COMMON, get_settings_instance
+
+# Import gym config with error handling
+try:
+    from .gymconf import GymProfile, get_gym_config
+except Exception:
+    GymProfile = None
+    get_gym_config = None
 
 
-EnvironmentType = Literal["development", "production"]
+class SettingsContainer(containers.DeclarativeContainer):
+    """
+    Dependency injection container for all settings.
+
+    This container coordinates:
+    - Environment settings (common Django settings)
+    - Database settings
+    - Gym configuration (from YAML)
+
+    All settings are singletons to ensure single instances.
+    """
+
+    # Environment settings provider
+    env_settings = providers.Singleton(get_settings_instance)
+
+    # Database settings provider
+    db_settings = providers.Singleton(get_database_settings_instance)
+
+    # Gym config provider (lazy loaded)
+    if get_gym_config is not None:
+        gym_config = providers.Singleton(get_gym_config)
+    else:
+        gym_config = providers.Singleton(lambda: None)
 
 
-class EnvironmentFactory:
-    """Factory for creating and managing environment configurations."""
-
-    _current_env: CommonSettings | None = None
-    _env_type: EnvironmentType | None = None
-
-    @classmethod
-    def attach(
-        cls, env_type: EnvironmentType | None = None
-    ) -> CommonSettings:
-        # Determine environment type
-        if env_type is None:
-            env_type = os.getenv("__COMMON_ENVIRONMENT", "development").lower()
-
-        # Validate environment type
-        if env_type not in ("development", "production"):
-            raise ValueError(
-                f"Invalid environment type: {env_type}. Must be 'development' or 'production'."
-            )
-
-        # Create appropriate settings instance
-        if env_type == "development":
-            cls._current_env = DevelopmentSettings()
-        else:
-            cls._current_env = ProductionSettings()
-
-        cls._env_type = env_type
-        return cls._current_env
-
-    @classmethod
-    def detach(cls) -> None:
-        """Detach the current environment configuration."""
-        cls._current_env = None
-        cls._env_type = None
-
-    @classmethod
-    def current(cls) -> CommonSettings:
-        if cls._current_env is None:
-            raise RuntimeError(
-                "No environment attached. Call attach() first or use get_or_attach()."
-            )
-        return cls._current_env
-
-    @classmethod
-    def get_or_attach(
-        cls, env_type: EnvironmentType | None = None
-    ) -> CommonSettings:
-        if cls._current_env is None:
-            return cls.attach(env_type)
-        return cls._current_env
-
-    @classmethod
-    def is_attached(cls) -> bool:
-        """Check if an environment is currently attached."""
-        return cls._current_env is not None
-
-    @classmethod
-    def current_type(cls) -> EnvironmentType | None:
-        """Get the current environment type."""
-        return cls._env_type
-
-    @classmethod
-    def reload(cls) -> CommonSettings:
-        if cls._env_type is None:
-            raise RuntimeError("No environment to reload. Call attach() first.")
-
-        env_type = cls._env_type
-        cls.detach()
-        return cls.attach(env_type)
+# Initialize container
+container = SettingsContainer()
 
 
-def load_environment(env_type: EnvironmentType | None = None) -> CommonSettings:
-    result = (
-        Either(None)
-        .bind(lambda: EnvironmentFactory.attach(env_type))
-        .unwrap_or(DevelopmentSettings())
-    )
-    return result
+def get_settings() -> __COMMON:
+    """Get environment settings instance."""
+    return container.env_settings()
 
 
-def get_settings() -> CommonSettings:
-    return EnvironmentFactory.get_or_attach()
+def get_database_settings() -> DatabaseSettings:
+    """Get database settings instance."""
+    return container.db_settings()
+
+
+def get_gym_settings() -> GymProfile | None:
+    """Get gym configuration instance."""
+    return container.gym_config()
+
+
+def override_settings(settings_instance: __COMMON) -> None:
+    """Override environment settings (for testing)."""
+    container.env_settings.override(providers.Singleton(lambda: settings_instance))
+
+
+def reset_settings() -> None:
+    """Reset environment settings override."""
+    container.env_settings.reset_override()
+
+
+# Export main components
+__all__ = [
+    "SettingsContainer",
+    "container",
+    "get_settings",
+    "get_database_settings",
+    "get_gym_settings",
+    "override_settings",
+    "reset_settings",
+]

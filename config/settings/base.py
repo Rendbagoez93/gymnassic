@@ -2,19 +2,30 @@
 Base Django settings for Gymnassic project.
 
 This module contains core settings shared across all environments.
-Environment-specific settings are loaded from development.py or production.py.
+Environment-specific settings are loaded from local.py or production.py.
+
+Settings are coordinated through the factory module which provides:
+- Environment settings (env_settings)
+- Database settings (via DATABASES)
+- Gym configuration (gym_config)
 """
 
 from pathlib import Path
 
 from .databases import DATABASES
-from .factory import get_settings
+from .factory import get_gym_settings, get_settings
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Load environment-specific settings
 env_settings = get_settings()
+
+# Load gym configuration (if available)
+try:
+    GYM_CONFIG = get_gym_settings()
+except Exception:
+    GYM_CONFIG = None
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env_settings.secret_key
