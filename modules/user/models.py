@@ -17,8 +17,8 @@ class User(SoftDeleteable):
     
     # KTP (Indonesian ID Number) - 16 digits
     phone_regex = RegexValidator(
-        regex=r'^\+?1?\d{9,15}$',
-        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+        regex=r'^\+62\d{9,13}$',
+        message="Phone number must be entered in the format: '+62812xxxxxxxx'. Indonesian numbers start with +62 followed by 9-13 digits."
     )
     ktp_regex = RegexValidator(
         regex=r'^\d{16}$',
@@ -46,9 +46,9 @@ class User(SoftDeleteable):
     
     # Phone Number
     phone_number = models.CharField(
-        max_length=15,
+        max_length=17,
         validators=[phone_regex],
-        help_text="Contact phone number"
+        help_text="Indonesian phone number (format: +62812xxxxxxxx)"
     )
     
     # Email

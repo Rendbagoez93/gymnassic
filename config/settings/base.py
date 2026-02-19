@@ -38,6 +38,7 @@ ALLOWED_HOSTS = env_settings.get_allowed_hosts_list()
 
 # Application definition
 
+# Django and third-party apps
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -45,17 +46,26 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+]
+
+THIRD_PARTY_APPS = [
     "django_extensions",
     "django_filters",
 ]
 
+# Modular components (modules.*)
+MODULES_APPS = [
+    "modules.user",
+]
+
+# Business applications (applications.*)
 MAIN_APPS = [
     "applications.gym_setup",
-    "applications.user",
+    "applications.user_management",
     "applications.membership",
 ]
 
-INSTALLED_APPS = DJANGO_APPS + MAIN_APPS
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + MODULES_APPS + MAIN_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
