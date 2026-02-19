@@ -12,8 +12,7 @@ Settings are coordinated through the factory module which provides:
 
 from pathlib import Path
 
-from .databases import DATABASES
-from .factory import get_gym_settings, get_settings
+from .factory import get_django_db_dict, get_gym_settings, get_settings
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -33,7 +32,10 @@ SECRET_KEY = env_settings.secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_settings.debug
 
-ALLOWED_HOSTS = env_settings.get_allowed_hosts_list()
+ALLOWED_HOSTS = env_settings.allowed_hosts
+
+# Database configuration
+DATABASES = get_django_db_dict()
 
 
 # Application definition
