@@ -15,5 +15,5 @@ urlpatterns = [
 # Customize admin site headers
 admin.site.site_header = "Gymnassic Admin"
 admin.site.site_title = "Gymnassic Admin Portal"
-admin.site.index_title = "Welcome to Gymnassic Management System"
+admin.site.index_title = "Welcome to Gym Management System"
 

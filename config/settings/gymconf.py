@@ -23,13 +23,6 @@ class GymAttribute(BaseModel):
 
 
 class GymConfig(YamlBaseSettings):
-    """Gym configuration loaded from gym_profile.yaml.
-
-    Supports flexible configuration for gym-specific settings.
-    The YAML file can contain any structure, fields defined here
-    are the ones explicitly mapped to Python attributes.
-    """
-
     gym_name: str = Field(alias="gym_name", description="Name of the gym")
     address: dict[str, Any] | None = Field(default=None, description="Gym address information")
     phone_numbers: list[str] | None = Field(default=None, description="Contact phone numbers")
